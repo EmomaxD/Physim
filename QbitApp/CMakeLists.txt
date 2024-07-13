@@ -26,6 +26,7 @@ target_include_directories(QbitApp PRIVATE
     ${GLM_DIR}
     ${GLM_DIR}/glm
     ${SPDLOG_DIR}/include
+    ${CMAKE_SOURCE_DIR}/Physics/src
 
 )
 
@@ -43,6 +44,7 @@ if(WIN32)
         gdi32 
         winmm
         Engine
+        Physics
     )
 else()
     message(FATAL_ERROR "Unsupported operating system")
