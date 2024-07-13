@@ -18,7 +18,7 @@ static SimulationMode g_CurrentSimulationMode = SIMULATION_DOUBLE_PENDULUM;
 
 QbitAppLayer::QbitAppLayer()
     : Layer("QbitAppLayer"),
-    m_CameraController(1600.0f / 900.0f), rope({ 0.0f, 0.0f }, { 0.4f, -0.5f }, 20), cloth(10, 10, 3, 1.0f)
+    m_CameraController(1600.0f / 900.0f), rope({ 0.0f, 0.0f }, { 0.4f, -0.5f }, 20), cloth(10, 10)
 {
 }
 
@@ -55,21 +55,24 @@ static void DrawDoublePendulum(const QP::Pendulum& pendulum1, const QP::Pendulum
     Qbit::Renderer2D::DrawQuad(position2, size, color);
 }
 
-static void DrawCloth(const QP::Cloth& cloth, const QP::Vec3& rodColor, const QP::Vec3& massColor, float size)
+static void DrawCloth(const QP::Cloth& cloth)
 {
-    for (int y = 0; y < cloth.height - 1; ++y) {
-        for (int x = 0; x < cloth.width - 1; ++x) {
-            Qbit::Renderer2D::DrawLine(
-                glm::vec3{ cloth.particles[y][x].position.x, cloth.particles[y][x].position.y, 0.0f },
-                glm::vec3{ cloth.particles[y][x + 1].position.x, cloth.particles[y][x + 1].position.y, 0.0f },
-                glm::vec4{ rodColor.x, rodColor.y, rodColor.z, 1.0f }
-            );
-
-            Qbit::Renderer2D::DrawLine(
-                glm::vec3{ cloth.particles[y][x].position.x, cloth.particles[y][x].position.y, 0.0f },
-                glm::vec3{ cloth.particles[y + 1][x].position.x, cloth.particles[y + 1][x].position.y, 0.0f },
-                glm::vec4{ rodColor.x, rodColor.y, rodColor.z, 1.0f }
-            );
+    for (size_t y = 0; y < cloth.height; ++y) {
+        for (size_t x = 0; x < cloth.width; ++x) {
+            if (x < cloth.width - 1) {
+                // Draw horizontal lines
+                Qbit::Renderer2D::DrawLine(
+                    glm::vec3{ cloth.particles[y * cloth.width + x].position.x, cloth.particles[y * cloth.width + x].position.y, 0.0f },
+                    glm::vec3{ cloth.particles[y * cloth.width + (x + 1)].position.x, cloth.particles[y * cloth.width + (x + 1)].position.y, 0.0f },
+                    glm::vec4(1.0f));
+            }
+            if (y < cloth.height - 1) {
+                // Draw vertical lines
+                Qbit::Renderer2D::DrawLine(
+                    glm::vec3{ cloth.particles[y * cloth.width + x].position.x, cloth.particles[y * cloth.width + x].position.y, 0.0f },
+                    glm::vec3{ cloth.particles[(y + 1) * cloth.width + x].position.x, cloth.particles[(y + 1) * cloth.width + x].position.y, 0.0f },
+                    glm::vec4(1.0f));
+            }
         }
     }
 }
@@ -104,7 +107,6 @@ void QbitAppLayer::OnUpdate(Qbit::Timestep ts)
         Qbit::Renderer2D::BeginScene(m_CameraController.GetCamera());
 
 
-
         switch (g_CurrentSimulationMode)
         {
         case SIMULATION_DOUBLE_PENDULUM:
@@ -124,11 +126,10 @@ void QbitAppLayer::OnUpdate(Qbit::Timestep ts)
                 auto mousePos = Qbit::Input::GetMousePosition();
                 QP::Vec2 mouseForce(mousePos.x, mousePos.y);
 
-                //QP::applyMouseForce(cloth, mouseForce);
+                cloth.applyMouseForce(mouseForce * 0.01f);
             }
-            cloth.applyGravity({ 0.0f, -9.81f });
             cloth.update(ts);
-            DrawCloth(cloth, { 1, 1, 1 }, { 0.5, 0.5, 0.5 }, 1);
+            DrawCloth(cloth);
             break;
 
         case SIMULATION_ROPE:

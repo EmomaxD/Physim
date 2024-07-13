@@ -24,6 +24,7 @@ public:
 	void OnEvent(Qbit::Event& e) override;
 private:
 	Qbit::OrthographicCameraController m_CameraController;
+	Qbit::EditorCamera m_EditorCamera;
 
 	QP::Pendulum pendulum1 = { 1.0, 1.0 }; // length 1m, mass 1kg
 	QP::Pendulum pendulum2 = { 1.0, 1.0 }; // length 1m, mass 1kg
