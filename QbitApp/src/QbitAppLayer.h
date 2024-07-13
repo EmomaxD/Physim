@@ -4,6 +4,7 @@
 
 #include "Pendulum.h"
 #include "Cloth.h"
+#include "Rope.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -24,15 +25,15 @@ public:
 private:
 	Qbit::OrthographicCameraController m_CameraController;
 
-	Pendulum pendulum1 = { 1.0, 1.0 }; // length 1m, mass 1kg
-	Pendulum pendulum2 = { 1.0, 1.0 }; // length 1m, mass 1kg
+	QP::Pendulum pendulum1 = { 1.0, 1.0 }; // length 1m, mass 1kg
+	QP::Pendulum pendulum2 = { 1.0, 1.0 }; // length 1m, mass 1kg
 
-	// Define the parameters
-	Parameters params = { 9.81 }; // acceleration due to gravity
+	QP::Parameters params = { 9.81 };
+	
+	QP::State state = { M_PI / 2, M_PI / 2, 0.0, 0.0 };
 
-	// Define the initial state
-	State state = { M_PI / 2, M_PI / 2, 0.0, 0.0 }; // initial angles and angular velocities
+	QP::Cloth cloth;
 
-	Cloth cloth;
+	QP::Rope rope;
 };
 

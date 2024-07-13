@@ -5,19 +5,21 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "Cloth.h"
 #include <Timestep.h>
 
-// Include your Pendulum header
+enum SimulationMode
+{
+    SIMULATION_DOUBLE_PENDULUM,
+    SIMULATION_CLOTH,
+    SIMULATION_ROPE
+};
 
-
-
+static SimulationMode g_CurrentSimulationMode = SIMULATION_DOUBLE_PENDULUM;
 
 QbitAppLayer::QbitAppLayer()
     : Layer("QbitAppLayer"),
-    m_CameraController(1600.0f / 900.0f)
+    m_CameraController(1600.0f / 900.0f), rope({ 0.0f, 0.0f }, { 0.4f, -0.5f }, 20), cloth(10, 10, 3, 1.0f)
 {
-    initialize_cloth(cloth, 10.0, 10.0, 20, 20, M_PI / 6);
 }
 
 void QbitAppLayer::OnAttach()
@@ -30,11 +32,11 @@ void QbitAppLayer::OnDetach()
     QB_PROFILE_FUNCTION();
 }
 
-static void DrawDoublePendulum(const Pendulum& pendulum1, const Pendulum& pendulum2, const State& state)
+static void DrawDoublePendulum(const QP::Pendulum& pendulum1, const QP::Pendulum& pendulum2, const QP::State& state)
 {
-    glm::vec2 size = { 0.1f, 0.1f }; // Size of the quad representing a mass
-    glm::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f }; // White color for masses
-    glm::vec4 rod_color = { 0.8f, 0.8f, 0.8f, 1.0f }; // Light gray color for rods
+    glm::vec2 size = { 0.1f, 0.1f };
+    glm::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glm::vec4 rod_color = { 0.8f, 0.8f, 0.8f, 1.0f };
 
     glm::vec2 origin = { 0.0f, 0.0f };
     glm::vec2 position1 = {
@@ -46,30 +48,42 @@ static void DrawDoublePendulum(const Pendulum& pendulum1, const Pendulum& pendul
         position1.y - pendulum2.length * cos(state.theta2)
     };
 
-    // Draw rods
     Qbit::Renderer2D::DrawLine(glm::vec3{ origin.x, origin.y, 0.0f }, glm::vec3{ position1.x, position1.y, 0.0f }, rod_color);
     Qbit::Renderer2D::DrawLine(glm::vec3{ position1.x, position1.y, 0.0f }, glm::vec3{ position2.x, position2.y, 0.0f }, rod_color);
 
-    // Draw masses
     Qbit::Renderer2D::DrawQuad(position1, size, color);
     Qbit::Renderer2D::DrawQuad(position2, size, color);
 }
 
-static void DrawCloth(const Cloth& cloth)
+static void DrawCloth(const QP::Cloth& cloth, const QP::Vec3& rodColor, const QP::Vec3& massColor, float size)
 {
-    glm::vec2 size = { 0.1f, 0.1f }; // Size of the quad representing a particle
-    glm::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f }; // White color for particles
+    for (int y = 0; y < cloth.height - 1; ++y) {
+        for (int x = 0; x < cloth.width - 1; ++x) {
+            Qbit::Renderer2D::DrawLine(
+                glm::vec3{ cloth.particles[y][x].position.x, cloth.particles[y][x].position.y, 0.0f },
+                glm::vec3{ cloth.particles[y][x + 1].position.x, cloth.particles[y][x + 1].position.y, 0.0f },
+                glm::vec4{ rodColor.x, rodColor.y, rodColor.z, 1.0f }
+            );
 
-    for (const auto& particle : cloth.particles) {
-        glm::vec2 position = { particle.position.x, particle.position.y };
-        Qbit::Renderer2D::DrawQuad(position, size, color);
+            Qbit::Renderer2D::DrawLine(
+                glm::vec3{ cloth.particles[y][x].position.x, cloth.particles[y][x].position.y, 0.0f },
+                glm::vec3{ cloth.particles[y + 1][x].position.x, cloth.particles[y + 1][x].position.y, 0.0f },
+                glm::vec4{ rodColor.x, rodColor.y, rodColor.z, 1.0f }
+            );
+        }
     }
+}
 
-    glm::vec4 spring_color = { 0.8f, 0.8f, 0.8f, 1.0f }; // Light gray color for springs
-    for (const auto& spring : cloth.springs) {
-        glm::vec3 p0 = { cloth.particles[spring.p1].position.x, cloth.particles[spring.p1].position.y, 0.0f };
-        glm::vec3 p1 = { cloth.particles[spring.p2].position.x, cloth.particles[spring.p2].position.y, 0.0f };
-        Qbit::Renderer2D::DrawLine(p0, p1, spring_color);
+QP::Timestep ts = 0.0016;
+
+static void DrawRope(const QP::Rope& rope)
+{
+    auto& particles = rope.particles;
+
+    for (size_t i = 0; i < particles.size() - 1; ++i) {
+        auto& pos = particles[i].position;
+        auto& pos1 = particles[i + 1].position;
+        Qbit::Renderer2D::DrawLine(glm::vec3{ pos.x, pos.y, 0.0f }, glm::vec3{ pos1.x, pos1.y, 0.0f }, glm::vec4(1.0f));
     }
 }
 
@@ -77,10 +91,8 @@ void QbitAppLayer::OnUpdate(Qbit::Timestep ts)
 {
     QB_PROFILE_FUNCTION();
 
-    // Update camera
     m_CameraController.OnUpdate(ts);
 
-    // Render
     Qbit::Renderer2D::ResetStats();
     {
         QB_PROFILE_SCOPE("RendererPrep");
@@ -93,21 +105,43 @@ void QbitAppLayer::OnUpdate(Qbit::Timestep ts)
 
 
 
+        switch (g_CurrentSimulationMode)
+        {
+        case SIMULATION_DOUBLE_PENDULUM:
+            if (Qbit::Input::IsMouseButtonPressed(Qbit::Mouse::Button0))
+            {
+                auto mousePos = Qbit::Input::GetMousePosition();
+                QP::Vec2 mouseForce(mousePos.x, mousePos.y);
+                QP::applyMouseForce(pendulum1, pendulum2, state, params, mouseForce);
+            }
+            runge_kutta_step(pendulum1, pendulum2, params, state, ts);
+            DrawDoublePendulum(pendulum1, pendulum2, state);
+            break;
 
-        QP::Timestep ts = 0.0016;
-        
+        case SIMULATION_CLOTH:
+            if (Qbit::Input::IsMouseButtonPressed(Qbit::Mouse::Button0))
+            {
+                auto mousePos = Qbit::Input::GetMousePosition();
+                QP::Vec2 mouseForce(mousePos.x, mousePos.y);
 
-#if 1
-        runge_kutta_step(pendulum1, pendulum2, params, state, ts);
+                //QP::applyMouseForce(cloth, mouseForce);
+            }
+            cloth.applyGravity({ 0.0f, -9.81f });
+            cloth.update(ts);
+            DrawCloth(cloth, { 1, 1, 1 }, { 0.5, 0.5, 0.5 }, 1);
+            break;
 
-        DrawDoublePendulum(pendulum1, pendulum2, state);
-#endif
-
-#if 0
-        update_cloth(cloth, ts);
-
-        DrawCloth(cloth);
-#endif
+        case SIMULATION_ROPE:
+            if (Qbit::Input::IsMouseButtonPressed(Qbit::Mouse::Button0))
+            {
+                auto mousePos = Qbit::Input::GetMousePosition();
+                QP::Vec2 mouseForce(mousePos.x, mousePos.y);
+                rope.applyMouseForce(mouseForce * 0.01f);
+            }
+            rope.update(ts);
+            DrawRope(rope);
+            break;
+        }
 
         Qbit::Renderer2D::EndScene();
     }
@@ -128,6 +162,15 @@ void QbitAppLayer::OnImGuiRender()
 
     float fps = ImGui::GetIO().Framerate;
     ImGui::Text("FPS: %.1f    %.2f ms", fps, 1000 * 1.0f / fps);
+
+    const char* simulationModes[] = { "Double Pendulum", "Cloth", "Rope" };
+    int currentSimulationMode = static_cast<int>(g_CurrentSimulationMode);
+    if (ImGui::Combo("Simulation Mode", &currentSimulationMode, simulationModes, IM_ARRAYSIZE(simulationModes)))
+    {
+        g_CurrentSimulationMode = static_cast<SimulationMode>(currentSimulationMode);
+    }
+
+    ImGui::Text("Timestep: %.4f ms", (float)ts);
 
     ImGui::End();
 }
