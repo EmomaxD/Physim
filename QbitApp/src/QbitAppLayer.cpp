@@ -11,7 +11,9 @@ enum SimulationMode
 {
     SIMULATION_DOUBLE_PENDULUM,
     SIMULATION_CLOTH,
-    SIMULATION_ROPE
+    SIMULATION_ROPE,
+    SIMULATION_FLUID,
+    SIMULATION_GRAVITY
 };
 
 static SimulationMode g_CurrentSimulationMode = SIMULATION_DOUBLE_PENDULUM;
@@ -20,6 +22,7 @@ QbitAppLayer::QbitAppLayer()
     : Layer("QbitAppLayer"),
     m_CameraController(1600.0f / 900.0f), rope({ 0.0f, 0.0f }, { 0.4f, -0.5f }, 20), cloth(10, 10)
 {
+    QP::InitializeParticles(gravity, 40, 20);
 }
 
 void QbitAppLayer::OnAttach()
@@ -77,7 +80,7 @@ static void DrawCloth(const QP::Cloth& cloth)
     }
 }
 
-QP::Timestep ts = 0.0016;
+QP::Timestep ts = 0.016;
 
 static void DrawRope(const QP::Rope& rope)
 {
@@ -87,6 +90,53 @@ static void DrawRope(const QP::Rope& rope)
         auto& pos = particles[i].position;
         auto& pos1 = particles[i + 1].position;
         Qbit::Renderer2D::DrawLine(glm::vec3{ pos.x, pos.y, 0.0f }, glm::vec3{ pos1.x, pos1.y, 0.0f }, glm::vec4(1.0f));
+    }
+}
+
+static void FluidDraw(const QP::FluidSimulation& fs) {
+
+    const int width = fs.width;
+    const int height = fs.height;
+    auto& grid = fs.grid;
+
+    glm::vec2 cellSize = { 0.1f, 0.1f };
+    glm::vec4 smokeColor = { 0.5f, 0.5f, 1.0f, 0.5f };
+    glm::vec4 obstacleColor = { 0.5f, 0.5f, 0.5f, 1.0f };
+
+
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            glm::vec2 position = { x * cellSize.x, y * cellSize.y };
+
+            if (grid[x][y].obstacle) {
+                Qbit::Renderer2D::DrawQuad(position, cellSize, obstacleColor);
+            }
+            else {
+                // Visualize smoke intensity
+                float smoke = grid[x][y].smoke;
+                glm::vec4 color = smoke > 0.1f ? glm::vec4(smokeColor.r, smokeColor.g, smokeColor.b, smoke) : glm::vec4(0, 0, 0, 0);
+                Qbit::Renderer2D::DrawQuad(position, cellSize, color);
+            }
+        }
+    }
+}
+
+static void DrawGravity(QP::Gravity& sim) {
+    float particleRadius = 0.05f;
+
+    for (auto& particle : sim.particles) {
+        float massFactor = 1.0f - (particle.mass - 1e6f) / (10e9f - 1e6f);
+        glm::vec4 particleColor = { massFactor * 0.8f, massFactor * 0.8f, massFactor * 0.8f, 1.0f };
+
+        auto& pos = particle.position;
+        pos.z = 0.0f;
+
+        glm::mat4 transform(1.0f);
+        transform = glm::translate(transform, { pos.x, pos.y, pos.z });
+
+        transform = glm::scale(transform, glm::vec3{0.8f, 0.8f, 0.8f });
+
+        Qbit::Renderer2D::DrawCircle(transform, particleColor);
     }
 }
 
@@ -142,7 +192,20 @@ void QbitAppLayer::OnUpdate(Qbit::Timestep ts)
             rope.update(ts);
             DrawRope(rope);
             break;
+
+        case SIMULATION_FLUID:
+            fluidSimulation.addSmoke(20, 10, 0.1f);
+            fluidSimulation.addVelocity(20, 40, 3.0f, 50.0f);
+            fluidSimulation.update(ts);
+            FluidDraw(fluidSimulation);
+            break;
+
+        case SIMULATION_GRAVITY:
+            QP::UpdateGravity(gravity, ts);
+            DrawGravity(gravity);
+            break;
         }
+
 
         Qbit::Renderer2D::EndScene();
     }
@@ -164,7 +227,7 @@ void QbitAppLayer::OnImGuiRender()
     float fps = ImGui::GetIO().Framerate;
     ImGui::Text("FPS: %.1f    %.2f ms", fps, 1000 * 1.0f / fps);
 
-    const char* simulationModes[] = { "Double Pendulum", "Cloth", "Rope" };
+    const char* simulationModes[] = { "Double Pendulum", "Cloth", "Rope", "Fluid", "Gravity"};
     int currentSimulationMode = static_cast<int>(g_CurrentSimulationMode);
     if (ImGui::Combo("Simulation Mode", &currentSimulationMode, simulationModes, IM_ARRAYSIZE(simulationModes)))
     {

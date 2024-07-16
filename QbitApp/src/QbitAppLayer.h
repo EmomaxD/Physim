@@ -5,6 +5,8 @@
 #include "Pendulum.h"
 #include "Cloth.h"
 #include "Rope.h"
+#include "Fluid.h"
+#include "Gravity.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -35,5 +37,9 @@ private:
 	QP::Cloth cloth;
 
 	QP::Rope rope;
+
+	QP::FluidSimulation fluidSimulation = { 80, 40 };
+
+	QP::Gravity gravity;
 };
 
